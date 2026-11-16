@@ -1,13 +1,13 @@
 {
   "domain": "enelgrid",
-  "name": "Enel Grid Integration",
-  "codeowners": ["@sathia-musso"],
+  "name": "MMOUi Enel Energia Italy",
+  "codeowners": ["@mattiaouiapp"],
   "config_flow": true,
   "dependencies": ["recorder"],
-  "documentation": "https://github.com/mattiaouiapp/hacs_teat01",
+  "documentation": "https://github.com/mattiaouiapp/HomeAssistant_HACS_EnelEnergia",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/mattiaouiapp/hacs_teat01/issues",
+  "issue_tracker": "https://github.com/mattiaouiapp/HomeAssistant_HACS_EnelEnergia/issues",
   "requirements": [],
   "version": "2.0.0"
 }

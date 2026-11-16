@@ -2,6 +2,8 @@
 
 ## 2.0.0
 
+First release of the fork "MMOUi Enel Energia Italy" (domain `enelgrid` unchanged).
+
 ### Fixed
 - **Statistics corrupted by the daily update** (regression of v1.6.0): the overlapping window
   (first day of previous month → today) was re-imported on top of the latest total, creating a

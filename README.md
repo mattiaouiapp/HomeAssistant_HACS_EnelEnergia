@@ -1,4 +1,8 @@
-# Home Assistant - enelgrid Integration
+# MMOUi Enel Energia Italy
+
+> **Fork** of [sathia-musso/enelgrid](https://github.com/sathia-musso/enelgrid) by Sathia Francesco Musso.
+> Version 2.0.0 is a rewrite that fixes the statistics corruption of v1.6.0, the monthly sensor and
+> daylight saving time handling, and modernizes the integration (see [CHANGELOG](CHANGELOG.md)).
 
 This custom integration for Home Assistant retrieves and imports **hourly and daily energy consumption data** from **Enel Italia**, making it available in Home Assistant's **Energy Dashboard**.
 
@@ -11,7 +15,7 @@ This custom integration for Home Assistant retrieves and imports **hourly and da
 - 📈 Summary sensors: current month, previous month, last available day, estimated monthly cost, last available data.
 - 🔁 Updates every 12 hours, fills gaps if Home Assistant was offline.
 - 🔐 Re-authentication flow when the Enel password changes.
-- 🩺 Diagnostics download (Settings → Devices & Services → enelgrid → ⋮ → Download diagnostics).
+- 🩺 Diagnostics download (Settings → Devices & Services → MMOUi Enel Energia Italy → ⋮ → Download diagnostics).
 
 Requires Home Assistant **2025.11** or newer.
 
@@ -19,10 +23,10 @@ Requires Home Assistant **2025.11** or newer.
 
 ### Installation via HACS (Recommended)
 
-1. In **HACS**, add this repository as a **Custom Repository** (category *Integration*).
-2. Search for **"enelgrid"** and install.
+1. In **HACS**, add `https://github.com/mattiaouiapp/HomeAssistant_HACS_EnelEnergia` as a **Custom Repository** (category *Integration*).
+2. Search for **"MMOUi Enel Energia Italy"** and install.
 3. Restart Home Assistant.
-4. Go to **Settings → Devices & Services → Add Integration** and search for **"enelgrid"**.
+4. Go to **Settings → Devices & Services → Add Integration** and search for **"MMOUi Enel Energia Italy"**.
 
 ### Manual Installation
 
@@ -79,7 +83,10 @@ the `/config/enelgrid_debug` folder is no longer written: it can be deleted.
 ## 🧑‍💻 Developer
 
 This integration was originally developed by [Sathia Francesco Musso](https://github.com/sathia-musso/enelgrid/).
-This repository is a fork with the 2.0.0 rewrite (see [CHANGELOG](CHANGELOG.md)).  
+This repository is a fork maintained by [mattiaouiapp](https://github.com/mattiaouiapp) with the 2.0.0 rewrite (see [CHANGELOG](CHANGELOG.md)).
+
+The integration domain is still `enelgrid`, so it is a drop-in replacement for the original: existing
+configuration, statistics and Energy dashboard settings are kept. Do not install both at the same time.  
 Contributions and feedback are welcome!
 
 ---
