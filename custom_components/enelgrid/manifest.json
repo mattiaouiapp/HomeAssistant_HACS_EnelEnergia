@@ -4,10 +4,10 @@
   "codeowners": ["@sathia-musso"],
   "config_flow": true,
   "dependencies": ["recorder"],
-  "documentation": "https://github.com/sathia-musso/enelgrid",
+  "documentation": "https://github.com/mattiaouiapp/hacs_teat01",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/sathia-musso/enelgrid/issues",
+  "issue_tracker": "https://github.com/mattiaouiapp/hacs_teat01/issues",
   "requirements": [],
   "version": "2.0.0"
 }

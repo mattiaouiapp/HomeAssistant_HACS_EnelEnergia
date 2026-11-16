@@ -78,7 +78,8 @@ the `/config/enelgrid_debug` folder is no longer written: it can be deleted.
 
 ## 🧑‍💻 Developer
 
-This integration was developed by [Sathia Francesco Musso](https://github.com/sathia-musso/enelgrid/).  
+This integration was originally developed by [Sathia Francesco Musso](https://github.com/sathia-musso/enelgrid/).
+This repository is a fork with the 2.0.0 rewrite (see [CHANGELOG](CHANGELOG.md)).  
 Contributions and feedback are welcome!
 
 ---
