@@ -1,0 +1,217 @@
+# Dashboard "Consumi Enel" per MMOUi Enel Energia Italy
+# https://github.com/mattiaouiapp/HomeAssistant_HACS_EnelEnergia
+#
+# Come usarla:
+#   1. Sostituisci ovunque  it001e12345678  con il tuo POD in minuscolo (es. it001e98765432).
+#   2. Impostazioni -> Dashboard -> Aggiungi dashboard -> "Nuova dashboard da zero",
+#      aprila, matita -> menu ⋮ -> "Editor di configurazione grezza", incolla tutto e salva.
+#      Per aggiungere solo la vista a una dashboard esistente, copia l'elemento sotto "views:".
+#
+# Gli entity id dei sensori (sensor.enel_<pod>_...) sono quelli creati con Home Assistant in
+# inglese e il dispositivo col nome predefinito "Enel <POD>". Con Home Assistant in italiano
+# sono per esempio sensor.enel_<pod>_ultima_bolletta: controllali nella pagina del dispositivo.
+# Le statistiche (sensor:enelgrid_<pod>_...) e sensor.enelgrid_<pod>_monthly_consumption
+# hanno sempre questo nome.
+
+title: Consumi Enel
+views:
+  - type: sections
+    max_columns: 4
+    title: Consumi Enel
+    path: consumi-enel
+    icon: mdi:lightning-bolt
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Riepilogo
+            heading_style: title
+            icon: mdi:flash
+          - type: statistic
+            entity: sensor:enelgrid_it001e12345678_consumption
+            stat_type: change
+            period:
+              calendar:
+                period: week
+                offset: -1
+            icon: mdi:calendar-today
+            name: Ultima Settimana*
+          - type: statistic
+            name: Questo mese
+            entity: sensor:enelgrid_it001e12345678_consumption
+            stat_type: change
+            period:
+              calendar:
+                period: month
+            icon: mdi:calendar-month
+          - type: statistic
+            name: Mese scorso
+            entity: sensor:enelgrid_it001e12345678_consumption
+            stat_type: change
+            period:
+              calendar:
+                period: month
+                offset: -1
+            icon: mdi:calendar-arrow-left
+          - type: statistic
+            name: Anno in corso
+            entity: sensor:enelgrid_it001e12345678_consumption
+            stat_type: change
+            period:
+              calendar:
+                period: year
+            icon: mdi:calendar
+          - type: statistic
+            name: Costo mese
+            entity: sensor:enelgrid_it001e12345678_kw_cost
+            stat_type: change
+            period:
+              calendar:
+                period: month
+            icon: mdi:currency-eur
+          - type: statistic
+            name: Costo anno
+            entity: sensor:enelgrid_it001e12345678_kw_cost
+            stat_type: change
+            period:
+              calendar:
+                period: year
+            icon: mdi:cash-multiple
+          - type: markdown
+            content: '<small>*Enel pubblica i dati con circa **3 giorni di ritardo**: oggi e ieri risulteranno vuoti o parziali.</small>'
+          - type: heading
+            heading: Integrazione
+            heading_style: subtitle
+            icon: mdi:connection
+          - type: tile
+            entity: sensor.enelgrid_it001e12345678_monthly_consumption
+            name: Totale mese (sensore)
+      - type: grid
+        cards:
+          - type: heading
+            heading: Bollette
+            heading_style: title
+            icon: mdi:receipt-text
+          - type: markdown
+            title: Ultima bolletta
+            content: |-
+              {% set b = 'sensor.enel_it001e12345678_last_bill' %}
+              {% if states(b) in ['unknown', 'unavailable'] %}
+              Dati bolletta non ancora disponibili.
+              {% else %}
+              {% set due = state_attr(b, 'amount_due') | float(0) %}
+              {% set scad = state_attr(b, 'due_date') %}
+              {% if due > 0 %}
+              {% set giorni = ((as_timestamp(scad ~ 'T00:00:00') - as_timestamp(today_at())) / 86400) | round(0) | int %}
+              ## {{ '🔴' if state_attr(b, 'overdue') else '🟠' }} Da pagare: {{ '%.2f' | format(due) }} €
+              {% if state_attr(b, 'overdue') %}**Scaduta da {{ -giorni }} giorni**{% elif giorni == 0 %}**Scade oggi**{% else %}Scade tra **{{ giorni }} giorni**{% endif %}
+              {% else %}
+              ## 🟢 Pagata: {{ '%.2f' | format(states(b) | float(0)) }} €
+              {% endif %}
+
+              | | |
+              |:--|--:|
+              | Emissione | **{{ strptime(state_attr(b, 'issue_date'), '%Y-%m-%d').strftime('%d/%m/%Y') }}** |
+              | Scadenza | **{{ strptime(scad, '%Y-%m-%d').strftime('%d/%m/%Y') if scad else '-' }}** |
+              | Periodo | **{{ (state_attr(b, 'period') or '-') | capitalize }}** |
+              | Importo | **{{ '%.2f' | format(states(b) | float(0)) }} €** |
+              {% if state_attr(b, 'paid_on') %}| Pagata il | {{ strptime(state_attr(b, 'paid_on'), '%Y-%m-%d').strftime('%d/%m/%Y') }} |{% endif %}
+              {% endif %}
+          - type: markdown
+            title: Bolletta precedente
+            content: |-
+              {% set b = 'sensor.enel_it001e12345678_previous_bill' %}
+              {% if states(b) in ['unknown', 'unavailable'] %}
+              Dati bolletta non ancora disponibili.
+              {% else %}
+              {% set scad = state_attr(b, 'due_date') %}
+              {% set pagata = state_attr(b, 'paid_on') %}
+              {{ '🟢 **' ~ state_attr(b, 'status') ~ '**' if (state_attr(b, 'amount_due') | float(0)) == 0 else '🟠 **Da pagare: ' ~ ('%.2f' | format(state_attr(b, 'amount_due') | float(0))) ~ ' €**' }}
+
+              | | |
+              |:--|--:|
+              | Emissione | {{ strptime(state_attr(b, 'issue_date'), '%Y-%m-%d').strftime('%d/%m/%Y') }} |
+              | Scadenza | {{ strptime(scad, '%Y-%m-%d').strftime('%d/%m/%Y') if scad else '-' }} |
+              | Periodo | {{ (state_attr(b, 'period') or '-') | capitalize }} |
+              | Importo | **{{ '%.2f' | format(states(b) | float(0)) }} €** |
+              | Pagata il | {{ strptime(pagata, '%Y-%m-%d').strftime('%d/%m/%Y') if pagata else '-' }} |
+              {% endif %}
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Andamento
+            heading_style: title
+            icon: mdi:chart-bar
+          - type: statistics-graph
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_consumption
+                name: kWh
+            title: Consumo orario (ultimo giorno)
+            days_to_show: 2
+            period: hour
+            chart_type: bar
+            stat_types:
+              - change
+          - type: statistics-graph
+            title: Consumo orario (ultimi 7 giorni)
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_consumption
+                name: kWh
+            stat_types:
+              - change
+            period: hour
+            days_to_show: 7
+            chart_type: bar
+          - type: statistics-graph
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_consumption
+                name: kWh
+            title: Consumo giornaliero (ultimi 15 giorni)
+            days_to_show: 15
+            period: day
+            chart_type: bar
+            stat_types:
+              - change
+          - type: statistics-graph
+            title: Consumo giornaliero (ultimi 30 giorni)
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_consumption
+                name: kWh
+            stat_types:
+              - change
+            period: day
+            days_to_show: 30
+            chart_type: bar
+      - type: grid
+        cards:
+          - type: heading
+            heading: Andamento
+            heading_style: title
+            icon: mdi:chart-bar
+          - type: statistics-graph
+            title: Costo mensile stimato (ultimi 12 mesi)
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_kw_cost
+                name: EUR
+            stat_types:
+              - change
+            period: month
+            days_to_show: 365
+            chart_type: bar
+          - type: statistics-graph
+            title: Consumo mensile (ultimi 12 mesi)
+            entities:
+              - entity: sensor:enelgrid_it001e12345678_consumption
+                name: kWh
+            stat_types:
+              - change
+            period: month
+            days_to_show: 365
+            chart_type: bar
+    cards: []
+    header:
+      card:
+        type: markdown
+        text_only: true
+        content: '### ⚡ Enel Energia - Consumi elettrici'
