@@ -81,6 +81,93 @@
             "name": "Import storico"
           }
         }
+      },
+      "last_bill": {
+        "name": "Ultima bolletta",
+        "state_attributes": {
+          "issue_date": {
+            "name": "Data emissione"
+          },
+          "due_date": {
+            "name": "Scadenza"
+          },
+          "period": {
+            "name": "Periodo"
+          },
+          "period_start": {
+            "name": "Inizio periodo"
+          },
+          "period_end": {
+            "name": "Fine periodo"
+          },
+          "status": {
+            "name": "Stato"
+          },
+          "amount_due": {
+            "name": "Importo da pagare"
+          },
+          "paid_on": {
+            "name": "Pagata il"
+          },
+          "overdue": {
+            "name": "Scaduta"
+          },
+          "tv_fee": {
+            "name": "Canone TV"
+          }
+        }
+      },
+      "previous_bill": {
+        "name": "Bolletta precedente",
+        "state_attributes": {
+          "issue_date": {
+            "name": "Data emissione"
+          },
+          "due_date": {
+            "name": "Scadenza"
+          },
+          "period": {
+            "name": "Periodo"
+          },
+          "period_start": {
+            "name": "Inizio periodo"
+          },
+          "period_end": {
+            "name": "Fine periodo"
+          },
+          "status": {
+            "name": "Stato"
+          },
+          "amount_due": {
+            "name": "Importo da pagare"
+          },
+          "paid_on": {
+            "name": "Pagata il"
+          },
+          "overdue": {
+            "name": "Scaduta"
+          },
+          "tv_fee": {
+            "name": "Canone TV"
+          }
+        }
+      },
+      "amount_due": {
+        "name": "Totale da pagare",
+        "state_attributes": {
+          "unpaid_bills": {
+            "name": "Bollette da pagare"
+          },
+          "next_due_date": {
+            "name": "Prossima scadenza"
+          },
+          "overdue": {
+            "name": "Scaduta"
+          },
+          "error": {
+            "name": "Errore"
+          }
+        }
       }
     }
   }

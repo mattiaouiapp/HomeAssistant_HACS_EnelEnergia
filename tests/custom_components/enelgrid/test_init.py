@@ -96,6 +96,9 @@ async def test_new_entry_imports_full_history_and_creates_sensors(hass: HomeAssi
         "last_day_consumption",
         "monthly_cost",
         "last_reading",
+        "last_bill",
+        "previous_bill",
+        "amount_due",
     }
     assert float(hass.states.get(entities["previous_month_consumption"]).state) == pytest.approx(31 * 12)
     last_day = hass.states.get(entities["last_day_consumption"])
@@ -166,3 +169,40 @@ async def test_unload(hass: HomeAssistant, fake_client):
     await _setup(hass, entry)
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_bill_sensors(hass: HomeAssistant, fake_client):
+    entry = MockConfigEntry(domain=DOMAIN, version=5, unique_id=POD, data=DATA)
+    await _setup(hass, entry)
+    registry = er.async_get(hass)
+
+    def state(key):
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"it001e00000001_{key}")
+        return hass.states.get(entity_id)
+
+    last = state("last_bill")
+    assert float(last.state) == pytest.approx(120.50)
+    assert last.attributes["issue_date"] == "2025-03-12"
+    assert last.attributes["due_date"] == "2025-03-28"
+    assert last.attributes["period"] == "gennaio - febbraio 2025"
+    assert last.attributes["status"] == "Da pagare"
+
+    previous = state("previous_bill")
+    assert float(previous.state) == pytest.approx(98.40)
+    assert previous.attributes["paid_on"] == "2025-01-30"
+
+    due = state("amount_due")
+    assert float(due.state) == pytest.approx(120.50)
+    assert due.attributes["unpaid_bills"] == 1
+    assert due.attributes["next_due_date"] == "2025-03-28"
+
+
+async def test_bill_error_does_not_break_consumption(hass: HomeAssistant, fake_client):
+    from custom_components.enelgrid.api import EnelGridError
+
+    fake_client.bills_error = EnelGridError("archive down")
+    entry = MockConfigEntry(domain=DOMAIN, version=5, unique_id=POD, data=DATA)
+    await _setup(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.bills is None
+    assert entry.runtime_data.bills_error == "archive down"

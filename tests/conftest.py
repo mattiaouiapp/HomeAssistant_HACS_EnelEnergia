@@ -51,6 +51,40 @@ def flat_days(start: date, end: date, kwh_per_hour: float = 0.5) -> dict[date, l
     return days
 
 
+def bill_archive() -> dict[str, Any]:
+    """getArchivioBollette 'data' with one unpaid and two paid bills (newest not first)."""
+
+    def bill(issue, due, amount, residual, status, period, paid=None):
+        raw = {
+            "Tipodocumento": "F",
+            "Numerodocumento": "000000000000",
+            "Dataemissione": issue,
+            "Datascadenza": due,
+            "Importofattura": amount,
+            "Importoresiduo": residual,
+            "ImportocanoneTV": "9.00",
+            "Statopagabilita": status,
+            "Periododiriferimento": period,
+        }
+        if paid:
+            raw["Datapagamento"] = paid
+        return raw
+
+    return {
+        "dataAggiornamento": "01-04-2025 10:00:00",
+        "results": [
+            {
+                "contoContrattuale": "000000000000",
+                "fatture": [
+                    bill("2025-01-10", "2025-01-27", "98.40", "0.00", "PAGATA", "112024122024", "2025-01-30"),
+                    bill("2025-03-12", "2025-03-28", "120.50", "120.50", "DA PAGARE", "012025022025"),
+                    bill("2024-11-08", "2024-11-25", "87.15", "0.00", "PAGATA", "092024102024", "2024-11-20"),
+                ],
+            }
+        ],
+    }
+
+
 class FakeEnelClient:
     """Stand-in for EnelGridClient.
 
@@ -63,6 +97,7 @@ class FakeEnelClient:
     last_day = date(2025, 11, 13)
     login_error: Exception | None = None
     fetch_error: Exception | None = None
+    bills_error: Exception | None = None
     calls: list[tuple[date, date]] = []
 
     def __init__(self, *args, **kwargs) -> None:
@@ -84,6 +119,11 @@ class FakeEnelClient:
         hi = min(end, FakeEnelClient.last_day)
         return enel_response(flat_days(lo, hi) if lo <= hi else {})
 
+    async def fetch_bills(self):
+        if FakeEnelClient.bills_error:
+            raise FakeEnelClient.bills_error
+        return bill_archive()
+
 
 @pytest.fixture
 def fake_client():
@@ -91,6 +131,7 @@ def fake_client():
     FakeEnelClient.last_day = date(2025, 11, 13)
     FakeEnelClient.login_error = None
     FakeEnelClient.fetch_error = None
+    FakeEnelClient.bills_error = None
     FakeEnelClient.calls = []
     from unittest.mock import patch
 

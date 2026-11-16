@@ -81,6 +81,93 @@
             "name": "Historical import"
           }
         }
+      },
+      "last_bill": {
+        "name": "Last bill",
+        "state_attributes": {
+          "issue_date": {
+            "name": "Issue date"
+          },
+          "due_date": {
+            "name": "Due date"
+          },
+          "period": {
+            "name": "Period"
+          },
+          "period_start": {
+            "name": "Period start"
+          },
+          "period_end": {
+            "name": "Period end"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "amount_due": {
+            "name": "Amount due"
+          },
+          "paid_on": {
+            "name": "Paid on"
+          },
+          "overdue": {
+            "name": "Overdue"
+          },
+          "tv_fee": {
+            "name": "TV licence fee"
+          }
+        }
+      },
+      "previous_bill": {
+        "name": "Previous bill",
+        "state_attributes": {
+          "issue_date": {
+            "name": "Issue date"
+          },
+          "due_date": {
+            "name": "Due date"
+          },
+          "period": {
+            "name": "Period"
+          },
+          "period_start": {
+            "name": "Period start"
+          },
+          "period_end": {
+            "name": "Period end"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "amount_due": {
+            "name": "Amount due"
+          },
+          "paid_on": {
+            "name": "Paid on"
+          },
+          "overdue": {
+            "name": "Overdue"
+          },
+          "tv_fee": {
+            "name": "TV licence fee"
+          }
+        }
+      },
+      "amount_due": {
+        "name": "Amount due",
+        "state_attributes": {
+          "unpaid_bills": {
+            "name": "Unpaid bills"
+          },
+          "next_due_date": {
+            "name": "Next due date"
+          },
+          "overdue": {
+            "name": "Overdue"
+          },
+          "error": {
+            "name": "Error"
+          }
+        }
       }
     }
   }

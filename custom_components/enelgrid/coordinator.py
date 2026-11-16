@@ -30,12 +30,14 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .parser import (
+    Bill,
     ConsumptionSummary,
     HourlyReading,
     first_of_month,
     first_of_previous_month,
     local_day,
     month_ranges,
+    parse_bills,
     parse_hourly_consumption,
     summarize,
 )
@@ -69,6 +71,9 @@ class EnelGridCoordinator(DataUpdateCoordinator[ConsumptionSummary]):
         )
         self._lock = asyncio.Lock()
         self.last_raw_response: dict[str, Any] | None = None
+        # Bills are optional: an error there never fails the consumption update.
+        self.bills: list[Bill] | None = None
+        self.bills_error: str | None = None
         self.historical_status: str = (
             "pending" if entry.data.get(DATA_HISTORICAL_FETCH_NEEDED) else "not_needed"
         )
@@ -118,6 +123,7 @@ class EnelGridCoordinator(DataUpdateCoordinator[ConsumptionSummary]):
                 async with self._client() as client:
                     for start, end in reversed(month_ranges(window_start, today)):
                         readings.extend(await self._fetch_month(client, start, end))
+                    await self._update_bills(client)
             except EnelGridAuthError as err:
                 raise ConfigEntryAuthFailed(str(err)) from err
             except EnelGridError as err:
@@ -131,6 +137,15 @@ class EnelGridCoordinator(DataUpdateCoordinator[ConsumptionSummary]):
                 _LOGGER.info("Enel returned no hourly data for %s -> %s", window_start, today)
 
             return summarize(readings, today)
+
+    async def _update_bills(self, client: EnelGridClient) -> None:
+        """Refresh the bill list, keeping the previous one on errors."""
+        try:
+            self.bills = parse_bills(await client.fetch_bills())
+            self.bills_error = None
+        except (EnelGridError, KeyError, TypeError, ValueError) as err:
+            self.bills_error = str(err)
+            _LOGGER.warning("enelgrid %s: cannot read bills: %s", self.pod, err)
 
     async def async_historical_import(self) -> None:
         """Download the whole history and rebuild both statistics from scratch."""

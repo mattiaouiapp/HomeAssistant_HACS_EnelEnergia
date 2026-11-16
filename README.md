@@ -12,6 +12,7 @@ This custom integration for Home Assistant retrieves and imports **hourly and da
 - 🕒 Imports **hourly** consumption (Enel publishes data with a ~3 day delay) as long-term statistics, ready for the **Energy dashboard**.
 - 📚 Imports the **whole available history** (up to 4 years) on first setup.
 - 💶 Cost statistic based on a configurable price per kWh (changeable from the integration options).
+- 🧾 Bills: last and previous bill (issue date, due date, period, status) and total amount still to pay.
 - 📈 Summary sensors: current month, previous month, last available day, estimated monthly cost, last available data.
 - 🔁 Updates every 12 hours, fills gaps if Home Assistant was offline.
 - 🔐 Re-authentication flow when the Enel password changes.
@@ -62,6 +63,9 @@ Result:
 | Last available day consumption | sensor (kWh) | attribute `date` |
 | Current month estimated cost | sensor (EUR) | |
 | Last available data | diagnostic timestamp | attribute `historical_import` |
+| Last bill | sensor (EUR) | attributes `issue_date`, `due_date`, `period`, `status`, `amount_due`, `paid_on`, `overdue` |
+| Previous bill | sensor (EUR) | same attributes as *Last bill* |
+| Amount due | sensor (EUR) | attributes `unpaid_bills`, `next_due_date`, `overdue` |
 
 The sensors only summarise the latest download: the authoritative history is in the statistics.
 

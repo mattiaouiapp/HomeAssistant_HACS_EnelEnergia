@@ -192,3 +192,113 @@ def build_cumulative(
             }
         )
     return kwh_rows, cost_rows
+
+
+# ---------------------------------------------------------------------------
+# Bills
+# ---------------------------------------------------------------------------
+
+MONTHS_IT = (
+    "gennaio",
+    "febbraio",
+    "marzo",
+    "aprile",
+    "maggio",
+    "giugno",
+    "luglio",
+    "agosto",
+    "settembre",
+    "ottobre",
+    "novembre",
+    "dicembre",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Bill:
+    """One Enel bill (fattura)."""
+
+    issue_date: date
+    due_date: date | None
+    amount: float
+    amount_due: float
+    status: str
+    paid_on: date | None
+    period_start: date | None  # first day of the first billed month
+    period_end: date | None  # first day of the last billed month
+    tv_fee: float | None
+
+    @property
+    def paid(self) -> bool:
+        return self.amount_due <= 0
+
+    def overdue(self, today: date) -> bool:
+        return not self.paid and self.due_date is not None and self.due_date < today
+
+    @property
+    def period(self) -> str | None:
+        """Human readable billing period in Italian, e.g. 'gennaio - febbraio 2025'."""
+        if self.period_start is None or self.period_end is None:
+            return None
+        start, end = self.period_start, self.period_end
+        if start == end:
+            return f"{MONTHS_IT[start.month - 1]} {start.year}"
+        if start.year == end.year:
+            return f"{MONTHS_IT[start.month - 1]} - {MONTHS_IT[end.month - 1]} {end.year}"
+        return f"{MONTHS_IT[start.month - 1]} {start.year} - {MONTHS_IT[end.month - 1]} {end.year}"
+
+
+def _parse_iso(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
+
+
+def _parse_amount(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _parse_period(value: Any) -> tuple[date | None, date | None]:
+    """'012025022025' -> (2026-09-01, 2026-10-01)."""
+    text = str(value or "")
+    if not re.fullmatch(r"\d{12}", text):
+        return None, None
+    try:
+        return date(int(text[2:6]), int(text[0:2]), 1), date(int(text[8:12]), int(text[6:8]), 1)
+    except ValueError:
+        return None, None
+
+
+def parse_bills(data: dict[str, Any]) -> list[Bill]:
+    """Parse a getArchivioBollette 'data' object. Newest bill first."""
+    bills: list[Bill] = []
+    for result in (data or {}).get("results") or []:
+        for raw in result.get("fatture") or []:
+            issue_date = _parse_iso(raw.get("Dataemissione"))
+            amount = _parse_amount(raw.get("Importofattura"))
+            if issue_date is None or amount is None:
+                continue
+            amount_due = _parse_amount(raw.get("Importoresiduo"))
+            status = str(raw.get("Statopagabilita") or "").strip().capitalize()
+            start, end = _parse_period(raw.get("Periododiriferimento"))
+            bills.append(
+                Bill(
+                    issue_date=issue_date,
+                    due_date=_parse_iso(raw.get("Datascadenza")),
+                    amount=amount,
+                    amount_due=amount_due if amount_due is not None else 0.0,
+                    status=status or ("Pagata" if not amount_due else "Da pagare"),
+                    paid_on=_parse_iso(raw.get("Datapagamento")),
+                    period_start=start,
+                    period_end=end,
+                    tv_fee=_parse_amount(raw.get("ImportocanoneTV")),
+                )
+            )
+    bills.sort(key=lambda b: b.issue_date, reverse=True)
+    return bills

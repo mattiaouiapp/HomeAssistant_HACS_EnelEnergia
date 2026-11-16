@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from html.parser import HTMLParser
+import json
 import logging
 from typing import Any
 
@@ -14,7 +15,8 @@ _LOGGER = logging.getLogger(__name__)
 LOGIN_PAGE_URL = "https://www.enel.it/it/login"
 LOGIN_URL = "https://accounts.enel.com/samlsso"
 SAMLAUTH_URL = "https://www.enel.it/bin/samlauth"
-AGGREGATE_CONSUMPTION_URL = "https://www.enel.it/bin/areaclienti/auth/aggregateConsumption"
+AREA_CLIENTI_URL = "https://www.enel.it/bin/areaclienti/auth/"
+AGGREGATE_CONSUMPTION_URL = AREA_CLIENTI_URL + "aggregateConsumption"
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=60)
 
@@ -142,3 +144,70 @@ class EnelGridClient:
                 return await response.json()
         except (aiohttp.ClientError, TimeoutError) as err:
             raise EnelGridError(f"Error fetching Enel consumption: {err}") from err
+
+    async def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        """Call a customer-area endpoint and decode its JSON (sent with any Content-Type)."""
+        try:
+            async with self.session.request(method, AREA_CLIENTI_URL + path, **kwargs) as response:
+                if response.status in (401, 403):
+                    raise EnelGridAuthError(f"Enel API {path} returned HTTP {response.status}")
+                response.raise_for_status()
+                text = await response.text()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise EnelGridError(f"Error calling Enel API {path}: {err}") from err
+        try:
+            return json.loads(text)
+        except ValueError as err:
+            raise EnelGridError(f"Enel API {path} did not return JSON") from err
+
+    async def fetch_bills(self) -> dict[str, Any]:
+        """Return the bill archive (paid and unpaid) of the supply with this POD."""
+        cards = await self._request_json("GET", "getCards", params={"skipMerge": "true", "pageNumber": "1"})
+        supplies = [
+            card
+            for card in (cards.get("data") or {}).get("Cards") or []
+            if card.get("commodity") != "Fibra" and card.get("contoContrattuale")
+        ]
+        wanted = _normalize(self._pod)
+        card = next((c for c in supplies if _normalize(c.get("pod") or "") == wanted), None)
+        if card is None and len(supplies) == 1:
+            card = supplies[0]
+        if card is None:
+            raise EnelGridError(f"POD {self._pod} not found among the supplies of this account")
+
+        # The fiscal code is required by the payments API; "data" is a JSON string.
+        profile = await self._request_json("GET", "main")
+        inner = (profile.get("map") or {}).get("data")
+        if isinstance(inner, str):
+            inner = json.loads(inner)
+        fiscal_code = (inner or {}).get("fiscalCode") or (inner or {}).get("codiceFiscale")
+        if not fiscal_code:
+            raise EnelGridError("Fiscal code not found in the Enel profile")
+
+        request = {
+            "cache": False,
+            "canale": "W",
+            "cf": fiscal_code,
+            "inputList": [
+                {
+                    "businessPartner": card.get("businessPartner") or "",
+                    "contoContrattuale": [card["contoContrattuale"]],
+                }
+            ],
+            "contoContrattuale": [card["contoContrattuale"]],
+            "numeroMassimo": 100,
+            "tipologia": "",
+        }
+        archive = await self._request_json(
+            "POST", "getArchivioBollette", data={"pagamentiRequest": json.dumps(request)}
+        )
+        status = archive.get("status") or {}
+        if status.get("codice") not in ("000", "001"):
+            raise EnelGridError(
+                f"Enel bill archive error {status.get('codice')}: {status.get('descrizione')}"
+            )
+        return archive.get("data") or {}
+
+
+def _normalize(pod: str) -> str:
+    return "".join(pod.split()).upper()

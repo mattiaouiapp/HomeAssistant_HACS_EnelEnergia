@@ -8,10 +8,11 @@ from custom_components.enelgrid.parser import (
     HourlyReading,
     build_cumulative,
     month_ranges,
+    parse_bills,
     parse_hourly_consumption,
     summarize,
 )
-from tests.conftest import enel_response
+from tests.conftest import bill_archive, enel_response
 
 
 def _assert_contiguous(readings):
@@ -97,3 +98,29 @@ def test_month_ranges():
         (date(2025, 10, 1), date(2025, 10, 31)),
     ]
     assert month_ranges(date(2025, 10, 20), date(2025, 10, 25)) == [(date(2025, 10, 20), date(2025, 10, 25))]
+
+
+def test_parse_bills():
+    bills = parse_bills(bill_archive())
+    assert [b.issue_date for b in bills] == [date(2025, 3, 12), date(2025, 1, 10), date(2024, 11, 8)]
+    new, previous = bills[0], bills[1]
+    assert new.amount == 120.50 and new.amount_due == 120.50 and not new.paid
+    assert new.due_date == date(2025, 3, 28)
+    assert new.status == "Da pagare"
+    assert new.period == "gennaio - febbraio 2025"
+    assert new.period_start == date(2025, 1, 1) and new.period_end == date(2025, 2, 1)
+    assert not new.overdue(date(2025, 3, 28)) and new.overdue(date(2025, 3, 29))
+    assert previous.paid and previous.paid_on == date(2025, 1, 30) and previous.status == "Pagata"
+
+
+def test_bill_period_across_years_and_bad_values():
+    data = bill_archive()
+    fatture = data["results"][0]["fatture"]
+    fatture[0]["Periododiriferimento"] = "122025012026"
+    fatture[1]["Periododiriferimento"] = ""
+    fatture[2]["Dataemissione"] = "not a date"
+    bills = parse_bills(data)
+    assert len(bills) == 2
+    assert bills[0].period is None
+    assert bills[1].period == "dicembre 2025 - gennaio 2026"
+    assert parse_bills({}) == []

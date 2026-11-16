@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+- Bill sensors read from the Enel customer area (same login, same update):
+  - **Last bill**: amount, with issue date, due date, billing period, status, amount due, paid on, overdue, TV fee as attributes.
+  - **Previous bill**: same data for the bill before.
+  - **Amount due**: total still to pay, number of unpaid bills, next due date, overdue flag.
+- An error reading the bills never stops the consumption update (shown in the `error` attribute and in diagnostics).
+
 ## 2.0.0
 
 First release of the fork "MMOUi Enel Energia Italy" (domain `enelgrid` unchanged).

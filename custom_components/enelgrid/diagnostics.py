@@ -36,5 +36,7 @@ async def async_get_config_entry_diagnostics(
         "historical_import": coordinator.historical_status,
         "last_update_success": coordinator.last_update_success,
         "summary": asdict(coordinator.data) if coordinator.data else None,
+        "bills": [asdict(b) for b in coordinator.bills] if coordinator.bills is not None else None,
+        "bills_error": coordinator.bills_error,
         "last_raw_response": async_redact_data(coordinator.last_raw_response or {}, TO_REDACT),
     }

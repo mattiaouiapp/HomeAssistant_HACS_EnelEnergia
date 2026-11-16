@@ -27,7 +27,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, ENEL_TZ
 from .coordinator import EnelGridConfigEntry, EnelGridCoordinator
-from .parser import ConsumptionSummary, first_of_month
+from .parser import Bill, ConsumptionSummary, first_of_month
 from .statistics import CURRENCY, normalize_pod
 
 PARALLEL_UPDATES = 0
@@ -43,6 +43,51 @@ class EnelGridSensorDescription(SensorEntityDescription):
 def _month_start() -> datetime:
     today = dt_util.now(ENEL_TZ).date()
     return datetime.combine(first_of_month(today), time(), ENEL_TZ)
+
+
+def _bill(coordinator: EnelGridCoordinator, index: int) -> Bill | None:
+    bills = coordinator.bills or []
+    return bills[index] if len(bills) > index else None
+
+
+def _bill_attrs(bill: Bill | None) -> dict[str, Any]:
+    if bill is None:
+        return {}
+    today = dt_util.now(ENEL_TZ).date()
+    return {
+        "issue_date": bill.issue_date.isoformat(),
+        "due_date": bill.due_date.isoformat() if bill.due_date else None,
+        "period": bill.period,
+        "period_start": bill.period_start.strftime("%Y-%m") if bill.period_start else None,
+        "period_end": bill.period_end.strftime("%Y-%m") if bill.period_end else None,
+        "status": bill.status,
+        "amount_due": bill.amount_due,
+        "paid_on": bill.paid_on.isoformat() if bill.paid_on else None,
+        "overdue": bill.overdue(today),
+        "tv_fee": bill.tv_fee,
+    }
+
+
+def _unpaid(coordinator: EnelGridCoordinator) -> list[Bill]:
+    return [b for b in coordinator.bills or [] if not b.paid]
+
+
+def _amount_due(coordinator: EnelGridCoordinator) -> float | None:
+    if coordinator.bills is None:
+        return None
+    return round(sum(b.amount_due for b in _unpaid(coordinator)), 2)
+
+
+def _amount_due_attrs(coordinator: EnelGridCoordinator) -> dict[str, Any]:
+    unpaid = _unpaid(coordinator)
+    today = dt_util.now(ENEL_TZ).date()
+    due_dates = sorted(b.due_date for b in unpaid if b.due_date)
+    return {
+        "unpaid_bills": len(unpaid),
+        "next_due_date": due_dates[0].isoformat() if due_dates else None,
+        "overdue": any(b.overdue(today) for b in unpaid),
+        "error": coordinator.bills_error,
+    }
 
 
 SENSORS: tuple[EnelGridSensorDescription, ...] = (
@@ -89,6 +134,33 @@ SENSORS: tuple[EnelGridSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda c, d: d.last_reading_end,
         attrs_fn=lambda c, d: {"historical_import": c.historical_status},
+    ),
+    EnelGridSensorDescription(
+        key="last_bill",
+        translation_key="last_bill",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        suggested_display_precision=2,
+        value_fn=lambda c, d: b.amount if (b := _bill(c, 0)) else None,
+        attrs_fn=lambda c, d: _bill_attrs(_bill(c, 0)),
+    ),
+    EnelGridSensorDescription(
+        key="previous_bill",
+        translation_key="previous_bill",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        suggested_display_precision=2,
+        value_fn=lambda c, d: b.amount if (b := _bill(c, 1)) else None,
+        attrs_fn=lambda c, d: _bill_attrs(_bill(c, 1)),
+    ),
+    EnelGridSensorDescription(
+        key="amount_due",
+        translation_key="amount_due",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        suggested_display_precision=2,
+        value_fn=lambda c, d: _amount_due(c),
+        attrs_fn=lambda c, d: _amount_due_attrs(c),
     ),
 )
 
