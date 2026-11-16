@@ -63,6 +63,24 @@ come costo, l'entità che traccia i costi totali `Enel <POD> Cost`.
 
 ![Esempio](assets/example.jpg)
 
+## Dashboard pronta "Consumi Enel"
+
+Nel file [`dashboard/consumi-enel.yaml`](dashboard/consumi-enel.yaml) c'è una dashboard completa da copiare:
+
+- **Riepilogo**: consumo dell'ultima settimana, del mese, del mese scorso e dell'anno, costo del mese e dell'anno;
+- **Bollette**: ultima bolletta (stato, giorni alla scadenza, emissione, scadenza, periodo, importo) e bolletta precedente;
+- **Andamento**: consumo orario, giornaliero e mensile, costo mensile stimato.
+
+Usa solo card standard di Home Assistant, non servono card aggiuntive.
+
+1. Sostituisci ovunque `it001e12345678` con il tuo POD in minuscolo.
+2. **Impostazioni → Dashboard → Aggiungi dashboard → Nuova dashboard da zero**, aprila, matita → menu ⋮ →
+   **Editor di configurazione grezza**, incolla tutto il file e salva.
+   Per aggiungere solo la vista a una dashboard esistente, copia l'elemento sotto `views:`.
+3. Se le card delle bollette mostrano "Dati bolletta non ancora disponibili", controlla gli entity id nella pagina
+   del dispositivo (vedi [Entità e statistiche](#entità-e-statistiche)): con Home Assistant in italiano sono per
+   esempio `sensor.enel_<pod>_ultima_bolletta` invece di `sensor.enel_<pod>_last_bill`.
+
 ## Bollette
 
 Le bollette arrivano dall'archivio dell'area clienti (le stesse che vedi su enel.it in *Bollette*) e si aggiornano
