@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Enel account",
+        "description": "Enter your Enel customer area credentials and supply details (printed on your bill).",
+        "data": {
+          "username": "Email",
+          "password": "Password",
+          "pod": "POD",
+          "user_number": "User number",
+          "price_per_kwh": "Price per kWh"
+        },
+        "data_description": {
+          "pod": "E.g. IT001E12345678",
+          "user_number": "The customer number printed on the bill",
+          "price_per_kwh": "Bill total divided by kWh consumed: used for the cost statistic"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Enel",
+        "description": "Enel login for POD {pod} stopped working. Please enter your credentials again.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials (or the Enel login page changed)",
+      "cannot_connect": "Cannot connect to Enel",
+      "invalid_user_number": "The user number must contain digits only",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This POD is already configured",
+      "reauth_successful": "Re-authentication successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Enel options",
+        "data": {
+          "price_per_kwh": "Price per kWh"
+        },
+        "data_description": {
+          "price_per_kwh": "Applied from the previous month onwards; older stored costs are left unchanged."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "monthly_consumption": {
+        "name": "Current month consumption"
+      },
+      "previous_month_consumption": {
+        "name": "Previous month consumption"
+      },
+      "last_day_consumption": {
+        "name": "Last available day consumption",
+        "state_attributes": {
+          "date": {
+            "name": "Date"
+          }
+        }
+      },
+      "monthly_cost": {
+        "name": "Current month estimated cost",
+        "state_attributes": {
+          "price_per_kwh": {
+            "name": "Price per kWh"
+          }
+        }
+      },
+      "last_reading": {
+        "name": "Last available data",
+        "state_attributes": {
+          "historical_import": {
+            "name": "Historical import"
+          }
+        }
+      }
+    }
+  }
+}

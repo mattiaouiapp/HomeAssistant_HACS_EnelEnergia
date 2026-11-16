@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Account Enel",
+        "description": "Inserisci le credenziali dell'area clienti Enel e i dati della fornitura (li trovi in bolletta).",
+        "data": {
+          "username": "Email",
+          "password": "Password",
+          "pod": "POD",
+          "user_number": "Numero utente",
+          "price_per_kwh": "Prezzo per kWh"
+        },
+        "data_description": {
+          "pod": "Es. IT001E12345678",
+          "user_number": "Il numero utente/cliente riportato in bolletta",
+          "price_per_kwh": "Totale bolletta diviso kWh consumati: usato per la statistica dei costi"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Nuovo accesso a Enel",
+        "description": "Il login Enel per il POD {pod} non funziona più. Inserisci di nuovo le credenziali.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Credenziali non valide (o la pagina di login Enel è cambiata)",
+      "cannot_connect": "Impossibile contattare Enel",
+      "invalid_user_number": "Il numero utente deve contenere solo cifre",
+      "unknown": "Errore imprevisto"
+    },
+    "abort": {
+      "already_configured": "Questo POD è già configurato",
+      "reauth_successful": "Accesso aggiornato"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni Enel",
+        "data": {
+          "price_per_kwh": "Prezzo per kWh"
+        },
+        "data_description": {
+          "price_per_kwh": "Viene applicato dal mese precedente in poi; i costi storici più vecchi restano invariati."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "monthly_consumption": {
+        "name": "Consumo mese corrente"
+      },
+      "previous_month_consumption": {
+        "name": "Consumo mese precedente"
+      },
+      "last_day_consumption": {
+        "name": "Consumo ultimo giorno disponibile",
+        "state_attributes": {
+          "date": {
+            "name": "Data"
+          }
+        }
+      },
+      "monthly_cost": {
+        "name": "Costo stimato mese corrente",
+        "state_attributes": {
+          "price_per_kwh": {
+            "name": "Prezzo per kWh"
+          }
+        }
+      },
+      "last_reading": {
+        "name": "Ultimo dato disponibile",
+        "state_attributes": {
+          "historical_import": {
+            "name": "Import storico"
+          }
+        }
+      }
+    }
+  }
+}

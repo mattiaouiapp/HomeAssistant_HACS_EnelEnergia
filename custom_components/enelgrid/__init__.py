@@ -1,111 +1,91 @@
+"""The enelgrid integration."""
+
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.statistics import (
-    clear_statistics,
-    list_statistic_ids,
-)
 
-from .const import DOMAIN, CONF_POD
+from .const import (
+    CONF_POD,
+    CONF_USER_NUMBER,
+    DATA_HISTORICAL_FETCH_COMPLETED,
+    DATA_HISTORICAL_FETCH_NEEDED,
+    LEGACY_CONF_POD,
+    LEGACY_CONF_USER_NUMBER,
+)
+from .coordinator import EnelGridConfigEntry, EnelGridCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+PLATFORMS = [Platform.SENSOR]
+CURRENT_VERSION = 5
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: EnelGridConfigEntry) -> bool:
+    """Set up enelgrid from a config entry."""
+    coordinator = EnelGridCoordinator(hass, entry)
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    if coordinator.historical_pending:
+        entry.async_create_background_task(
+            hass, coordinator.async_historical_import(), "enelgrid historical import"
+        )
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: EnelGridConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _find_legacy(data: dict[str, Any], exact: tuple[str, ...], prefix: str) -> Any:
+    for key in exact:
+        if data.get(key) not in (None, ""):
+            return data[key]
+    for key, value in data.items():
+        if key.lower().startswith(prefix) and value not in (None, ""):
+            return value
+    return None
+
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate old config entry to new format."""
-    _LOGGER.warning(f"[EnelGrid Migration] Starting migration from version {entry.version}")
+    """Migrate old config entries to version 5.
 
-    if entry.version == 1:
-        # Version 1 -> 2: Clear all statistics and trigger full historical fetch
-        # This fixes corrupted data from previous buggy migrations
-        await _migrate_v1_to_v2(hass, entry)
-        hass.config_entries.async_update_entry(entry, version=2)
-        _LOGGER.warning("[EnelGrid Migration] Migration to version 2 complete")
-
-    if entry.version == 2:
-        # Version 2 -> 3: Clear corrupted statistics and trigger full historical fetch
-        # This fixes data corruption from v1.4.0/v1.4.1 buggy migrations
-        await _migrate_v2_to_v3(hass, entry)
-        hass.config_entries.async_update_entry(entry, version=3)
-        _LOGGER.warning("[EnelGrid Migration] Migration to version 3 complete")
-
-    if entry.version == 3:
-        # Version 3 -> 4: Fix race condition bug (clear and re-fetch)
-        # Version 3 had incomplete migration that didn't actually clear statistics
-        await _migrate_v3_to_v4(hass, entry)
-        hass.config_entries.async_update_entry(entry, version=4)
-        _LOGGER.warning("[EnelGrid Migration] Migration to version 4 complete")
-
-    return True
-
-
-async def _migrate_v1_to_v2(hass: HomeAssistant, entry: ConfigEntry):
-    """Clear all statistics and mark for full historical re-fetch."""
-    await _clear_statistics_and_mark_fetch(hass, entry, "v1→v2")
-
-
-async def _migrate_v2_to_v3(hass: HomeAssistant, entry: ConfigEntry):
-    """Clear corrupted statistics from v1.4.0/v1.4.1 and trigger fresh fetch."""
-    await _clear_statistics_and_mark_fetch(hass, entry, "v2→v3")
-
-
-async def _migrate_v3_to_v4(hass: HomeAssistant, entry: ConfigEntry):
-    """Fix race condition bug - clear incomplete statistics and re-fetch."""
-    await _clear_statistics_and_mark_fetch(hass, entry, "v3→v4")
-
-
-async def _clear_statistics_and_mark_fetch(hass: HomeAssistant, entry: ConfigEntry, migration_name: str):
-    """Mark for clearing statistics and full historical re-fetch.
-
-    Note: We can't clear statistics here because migration runs in the main thread.
-    The historical_fetch_task will clear statistics before fetching new data.
+    Versions 1-4 used the form labels as keys ("pod: IT1234567890",
+    "numero utente"). v1.6.0 also corrupted the statistics on every daily
+    update (the overlapping window was stacked on top of the latest total),
+    so a full historical rebuild is scheduled.
     """
-    # Try multiple key formats for POD (handle legacy config entries)
-    pod = entry.data.get(CONF_POD)
-    if not pod:
-        # Try legacy formats
-        for key in entry.data.keys():
-            if key.startswith("pod"):
-                pod = entry.data[key]
-                break
+    if entry.version > CURRENT_VERSION:
+        return False
+    if entry.version == CURRENT_VERSION:
+        return True
 
-    if not pod:
-        _LOGGER.error(f"[EnelGrid Migration {migration_name}] Cannot find POD in config entry, skipping migration")
-        return
+    data = dict(entry.data)
+    pod = _find_legacy(data, (CONF_POD, LEGACY_CONF_POD), "pod")
+    user_number = _find_legacy(data, (CONF_USER_NUMBER, LEGACY_CONF_USER_NUMBER), "numero")
+    if pod is None or user_number is None:
+        _LOGGER.error("enelgrid: cannot migrate entry %s, POD or user number missing", entry.entry_id)
+        return False
 
-    _LOGGER.warning(f"[EnelGrid Migration {migration_name}] Will clear and re-fetch all historical data for POD {pod}")
+    for key in (LEGACY_CONF_POD, LEGACY_CONF_USER_NUMBER, "clear_statistics_needed"):
+        data.pop(key, None)
+    data[CONF_POD] = str(pod).strip()
+    data[CONF_USER_NUMBER] = str(user_number).strip()
+    data[DATA_HISTORICAL_FETCH_NEEDED] = True
+    data[DATA_HISTORICAL_FETCH_COMPLETED] = False
 
-    try:
-        # Mark that we need to clear old statistics and do full historical fetch
-        # The historical_fetch_task will handle the actual clearing
-        new_data = dict(entry.data)
-        new_data["historical_fetch_needed"] = True
-        new_data["historical_fetch_completed"] = False
-        new_data["clear_statistics_needed"] = True  # Flag for historical_fetch_task
-        hass.config_entries.async_update_entry(entry, data=new_data)
-
-        _LOGGER.warning(f"[EnelGrid Migration {migration_name}] Marked for statistics clear and full historical fetch")
-
-    except Exception as e:
-        _LOGGER.error(f"[EnelGrid Migration {migration_name}] Failed during migration: {e}", exc_info=True)
-        raise
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up enelgrid from a config entry."""
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry.data
-
-    # Forward the setup to the sensor platform
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
-
+    hass.config_entries.async_update_entry(entry, data=data, version=CURRENT_VERSION)
+    _LOGGER.info(
+        "enelgrid: migrated entry for %s to version %s, statistics will be rebuilt",
+        pod,
+        CURRENT_VERSION,
+    )
     return True
-
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_forward_entry_unload(entry, "sensor")
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-    return unload_ok

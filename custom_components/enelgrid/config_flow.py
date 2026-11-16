@@ -1,120 +1,173 @@
+"""Config flow for enelgrid."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
 import logging
-from typing import Any, Mapping
+from typing import Any
 
-import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlowWithReload,
+)
 from homeassistant.core import callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import selector
+import voluptuous as vol
 
+from .api import EnelGridAuthError, EnelGridClient, EnelGridError
 from .const import (
     CONF_PASSWORD,
     CONF_POD,
     CONF_PRICE_PER_KWH,
     CONF_USER_NUMBER,
     CONF_USERNAME,
+    DATA_HISTORICAL_FETCH_COMPLETED,
+    DATA_HISTORICAL_FETCH_NEEDED,
+    DEFAULT_PRICE_PER_KWH,
     DOMAIN,
 )
-from .login import EnelGridSession
 
 _LOGGER = logging.getLogger(__name__)
 
+PRICE_SELECTOR = selector.NumberSelector(
+    selector.NumberSelectorConfig(
+        min=0, max=5, step=0.001, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="€/kWh"
+    )
+)
 
-class EnelGridConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+
+def _normalize_pod(pod: str) -> str:
+    return "".join(pod.split()).upper()
+
+
+async def _validate(username: str, password: str, pod: str, user_number: str) -> str | None:
+    """Try to log in. Return an error key or None."""
+    try:
+        async with EnelGridClient(username, password, pod, user_number):
+            pass
+    except EnelGridAuthError:
+        return "invalid_auth"
+    except EnelGridError:
+        return "cannot_connect"
+    except Exception:
+        _LOGGER.exception("Unexpected error validating Enel credentials")
+        return "unknown"
+    return None
+
+
+class EnelGridConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for enelgrid."""
 
-    VERSION = 4
+    VERSION = 5
 
-    def __init__(self):
-        self.reauth_entry = None
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Handle the initial step where the user configures the integration."""
-        errors = {}
-        if getattr(self, "reauth_entry", None):
-            defaults = self.reauth_entry.data
-        else:
-            defaults = {}
-
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            try:
-                session = EnelGridSession(
-                    user_input[CONF_USERNAME],
-                    user_input[CONF_PASSWORD],
-                    user_input[CONF_POD],
-                    user_input[CONF_USER_NUMBER],
-                )
-                await session.login()  # 🔐 Credential check here
-                await session.close()
-            except ConfigEntryAuthFailed:
-                errors["base"] = "invalid_auth"
-            except Exception as err:
-                _LOGGER.exception(f"Failed to login: {err}")
-                errors["base"] = "unknown"
+            pod = _normalize_pod(user_input[CONF_POD])
+            user_number = user_input[CONF_USER_NUMBER].strip()
+            await self.async_set_unique_id(pod)
+            self._abort_if_unique_id_configured()
+
+            if not user_number.isdigit():
+                errors[CONF_USER_NUMBER] = "invalid_user_number"
+            elif error := await _validate(
+                user_input[CONF_USERNAME], user_input[CONF_PASSWORD], pod, user_number
+            ):
+                errors["base"] = error
             else:
-                pod = user_input[CONF_POD]
-                await self.async_set_unique_id(pod)
-
-                if not self.reauth_entry:
-                    self._abort_if_unique_id_configured()
-
-                if self.reauth_entry:
-                    self.hass.config_entries.async_update_entry(
-                        self.reauth_entry, data=user_input
-                    )
-                    return self.async_abort(reason="reauth_successful")
-
-                # Save all user-provided data to the config entry
                 return self.async_create_entry(
-                    title=f"enelgrid ({user_input[CONF_POD]})", data=user_input
+                    title=f"Enel {pod}",
+                    data={
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_POD: pod,
+                        CONF_USER_NUMBER: user_number,
+                        CONF_PRICE_PER_KWH: user_input[CONF_PRICE_PER_KWH],
+                        # New installs also get the full history.
+                        DATA_HISTORICAL_FETCH_NEEDED: True,
+                        DATA_HISTORICAL_FETCH_COMPLETED: False,
+                    },
                 )
 
-        # Show the form if user_input is None
+        user_input = user_input or {}
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.EMAIL, autocomplete="username")
+                ),
+                vol.Required(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD, autocomplete="current-password"
+                    )
+                ),
+                vol.Required(CONF_POD, default=user_input.get(CONF_POD, "")): str,
+                vol.Required(CONF_USER_NUMBER, default=user_input.get(CONF_USER_NUMBER, "")): str,
+                vol.Required(
+                    CONF_PRICE_PER_KWH,
+                    default=user_input.get(CONF_PRICE_PER_KWH, DEFAULT_PRICE_PER_KWH),
+                ): PRICE_SELECTOR,
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = await _validate(
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
+                entry.data[CONF_POD],
+                entry.data[CONF_USER_NUMBER],
+            )
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+
         return self.async_show_form(
-            step_id="user",
+            step_id="reauth_confirm",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")
-                    ): str,
-                    vol.Required(CONF_PASSWORD): str,
-                    vol.Required(CONF_POD, default=defaults.get(CONF_POD, "")): str,
-                    vol.Required(
-                        CONF_USER_NUMBER, default=defaults.get(CONF_USER_NUMBER, 0)
-                    ): int,
-                    vol.Required(
-                        CONF_PRICE_PER_KWH,
-                        default=defaults.get(CONF_PRICE_PER_KWH, 0.33),
-                    ): vol.Coerce(float),
+                    vol.Required(CONF_USERNAME, default=entry.data.get(CONF_USERNAME, "")): str,
+                    vol.Required(CONF_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
                 }
             ),
+            description_placeholders={"pod": entry.data[CONF_POD]},
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
-        """Perform reauth upon an API authentication error."""
-        entry_id = self.context.get("entry_id")
-        if not entry_id:
-            return self.async_abort(reason="missing_entry_id")
-
-        self.reauth_entry = self.hass.config_entries.async_get_entry(entry_id)
-        if self.reauth_entry is None:
-            return self.async_abort(reason="entry_not_found")
-
-        return await self.async_step_user()
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> EnelGridOptionsFlow:
+        return EnelGridOptionsFlow()
 
 
-@callback
-def async_get_options_flow(config_entry):
-    """Return the options flow handler if you want to add optional future settings."""
-    return EnelGridOptionsFlowHandler(config_entry)
+class EnelGridOptionsFlow(OptionsFlowWithReload):
+    """Options: price per kWh."""
 
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
 
-class EnelGridOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle any future options flow (optional)."""
-
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({}))
+        current = self.config_entry.options.get(
+            CONF_PRICE_PER_KWH,
+            self.config_entry.data.get(CONF_PRICE_PER_KWH, DEFAULT_PRICE_PER_KWH),
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Required(CONF_PRICE_PER_KWH, default=current): PRICE_SELECTOR}),
+        )

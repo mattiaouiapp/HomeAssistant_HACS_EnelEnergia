@@ -1,311 +1,121 @@
-from unittest.mock import patch, AsyncMock, MagicMock
+"""Config, reauth and options flow tests."""
 
-import pytest
-from homeassistant import data_entry_flow
-from homeassistant.config_entries import SOURCE_USER, SOURCE_REAUTH, ConfigEntry
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
+from unittest.mock import patch
+
+from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.data_entry_flow import FlowResultType
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.enelgrid.api import EnelGridAuthError, EnelGridError
 from custom_components.enelgrid.const import (
+    CONF_PASSWORD,
     CONF_POD,
-    CONF_USER_NUMBER,
     CONF_PRICE_PER_KWH,
+    CONF_USER_NUMBER,
+    CONF_USERNAME,
+    DATA_HISTORICAL_FETCH_NEEDED,
     DOMAIN,
 )
-
-"""
-Test suite for the EnelGrid integration config flow.
-
-This file contains end-to-end and unit tests for validating the configuration flow of the EnelGrid custom integration for Home Assistant.
-It ensures the integration correctly handles:
-
-- Initial user setup with valid credentials
-- Handling of invalid login attempts
-- Reauthentication when credentials expire or change
-- Sensor creation with proper unique IDs
-- Entity setup and value updates from backend responses
-- Proper unloading and reloading of the configuration entry
-
-Each test uses mocks to isolate Home Assistant logic from external dependencies like HTTP sessions, and validates correct flow types and state transitions.
-"""
 
 USER_INPUT = {
     CONF_USERNAME: "test@example.com",
     CONF_PASSWORD: "password123",
-    CONF_POD: "IT1234567890",
-    CONF_USER_NUMBER: 12345678,
+    CONF_POD: " it001e 00000001 ",
+    CONF_USER_NUMBER: "012345678",
     CONF_PRICE_PER_KWH: 0.25,
 }
 
 
 @pytest.fixture(autouse=True)
-def disable_track_time_interval():
-    """Disable actual timers in tests."""
-    with patch("homeassistant.helpers.event.async_track_time_interval") as mock:
-        yield mock
+def no_setup():
+    with patch("custom_components.enelgrid.async_setup_entry", return_value=True):
+        yield
 
 
-@pytest.fixture
-def entity_registry_enabled_by_default():
-    """Enable entity registry by default."""
-    return True
+async def test_user_flow_success(hass: HomeAssistant, fake_client):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert result["type"] is FlowResultType.FORM
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Enel IT001E00000001"
+    data = result["data"]
+    assert data[CONF_POD] == "IT001E00000001"
+    assert data[CONF_USER_NUMBER] == "012345678"  # leading zero preserved
+    assert data[DATA_HISTORICAL_FETCH_NEEDED] is True
+    assert result["result"].unique_id == "IT001E00000001"
 
 
-@pytest.mark.asyncio
-async def test_user_flow_success(hass: HomeAssistant):
-    """
-    Test the complete user setup flow:
-    - Shows the initial form
-    - Accepts valid credentials
-    - Creates a config entry successfully
-    """
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (EnelGridAuthError("x"), "invalid_auth"),
+        (EnelGridError("x"), "cannot_connect"),
+        (RuntimeError("x"), "unknown"),
+    ],
+)
+async def test_user_flow_errors(hass: HomeAssistant, fake_client, error, expected):
+    fake_client.login_error = error
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": expected}
 
-    user_input = USER_INPUT.copy()
-
-    # Create a mocked EnelGridSession with mocked methods
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()  # Prevent NoneType errors
-
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        return_value=mock_session,
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_USER}
-        )
-
-        assert result["type"] == data_entry_flow.FlowResultType.FORM
-
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=user_input
-        )
-
-        assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-        assert result2["data"] == user_input
-        entry = hass.config_entries.async_entries(DOMAIN)[0]
-        await hass.config_entries.async_unload(entry.entry_id)
+    fake_client.login_error = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
-@pytest.mark.asyncio
-async def test_user_flow_invalid_credentials(hass: HomeAssistant):
-    """
-    Test the setup flow with invalid credentials:
-    - Shows the form
-    - Raises a ConfigEntryAuthFailed during login
-    - Returns to the form with a base error
-    """
-
-    user_input = USER_INPUT.copy()
-    user_input[CONF_USERNAME] = "wrong@example.com"
-    user_input[CONF_PASSWORD] = "wrongpass"
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
+async def test_user_number_must_be_digits(hass: HomeAssistant, fake_client):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**USER_INPUT, CONF_USER_NUMBER: "abc"}
     )
-    assert result["type"] == data_entry_flow.FlowResultType.FORM
-
-    # Create a mocked EnelGridSession with mocked methods
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()  # Prevent NoneType errors
-
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        side_effect=ConfigEntryAuthFailed("Invalid credentials"),
-    ):
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=user_input
-        )
-
-    assert result2["type"] == data_entry_flow.FlowResultType.FORM
-    assert "base" in result2["errors"]
+    assert result["errors"] == {CONF_USER_NUMBER: "invalid_user_number"}
 
 
-@pytest.mark.asyncio
-async def test_reauth_flow_success(hass: HomeAssistant):
-    """
-    Test the reauthentication flow:
-    - Simulates an existing config entry that needs reauth
-    - Shows the user step with the form
-    - Accepts new credentials
-    - Aborts the flow with 'reauth_successful' after updating entry
-    """
+async def test_already_configured(hass: HomeAssistant, fake_client):
+    MockConfigEntry(domain=DOMAIN, unique_id="IT001E00000001", version=5).add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
 
-    entry = ConfigEntry(
-        version=1,
+
+async def test_reauth(hass: HomeAssistant, fake_client):
+    entry = MockConfigEntry(
         domain=DOMAIN,
-        title="Test",
-        data={
-            CONF_USERNAME: "old@example.com",
-            CONF_PASSWORD: "oldpass",
-            CONF_POD: "IT1234567890",
-            CONF_USER_NUMBER: 12345678,
-            CONF_PRICE_PER_KWH: 0.25,
-        },
-        options={},
-        entry_id="dummy_entry",
-        unique_id="IT1234567890",
-        source="user",
-        minor_version=1,
-        pref_disable_new_entities=False,
-        pref_disable_polling=False,
-        discovery_keys=[],
-        subentries_data={},
+        unique_id="IT001E00000001",
+        version=5,
+        data={**USER_INPUT, CONF_POD: "IT001E00000001", CONF_PASSWORD: "old"},
     )
+    entry.add_to_hass(hass)
+    result = await entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_confirm"
 
-    await hass.config_entries.async_add(entry)
-
-    # Create a mocked EnelGridSession with mocked methods
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()  # Prevent NoneType errors
-
-    with patch(
-        "custom_components.enelgrid.login.EnelGridSession",
-        return_value=mock_session,
-    ), patch(target="custom_components.enelgrid.async_setup_entry", return_value=True):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": SOURCE_REAUTH, "entry_id": "dummy_entry"},
-            data=entry.data,
-        )
-
-        assert result["type"] == data_entry_flow.FlowResultType.FORM
-        assert result["step_id"] == SOURCE_USER
-
-    new_input = USER_INPUT.copy()
-    new_input[CONF_USERNAME] = "new@example.com"
-    new_input[CONF_PASSWORD] = "newpass"
-    new_input[CONF_PRICE_PER_KWH] = 0.30
-
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        return_value=mock_session,
-    ):
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=new_input
-        )
-
-    assert result2["type"] == data_entry_flow.FlowResultType.ABORT
-    assert result2["reason"] == "reauth_successful"
-
-
-@pytest.mark.asyncio
-async def test_entity_unique_ids(hass: HomeAssistant):
-    """Test that created sensors have unique IDs set correctly."""
-    user_input = USER_INPUT.copy()
-
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()
-
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        return_value=mock_session,
-    ), patch(
-        "custom_components.enelgrid.async_setup_entry",
-        return_value=True,
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_USER}
-        )
-        assert result["type"] == data_entry_flow.FlowResultType.FORM
-
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=user_input
-        )
-        assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-
-        # Check unique ID is set for the entry
-        entry = hass.config_entries.async_entries(DOMAIN)[0]
-        assert entry.unique_id == "IT1234567890"
-
-
-@pytest.mark.asyncio
-async def test_entity_creation_and_update(hass: HomeAssistant):
-    """Test that the sensor updates its state."""
-    user_input = USER_INPUT.copy()
-
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()
-    mock_session.fetch_consumption_data = AsyncMock(
-        return_value={
-            "2025-01-01": [
-                {"timestamp": "2025-01-01T00:00:00", "cumulative_kwh": 123.45}
-            ]
-        }
+    fake_client.login_error = EnelGridAuthError("x")
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "wrong"}
     )
+    assert result["errors"] == {"base": "invalid_auth"}
 
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        return_value=mock_session,
-    ), patch(
-        "custom_components.enelgrid.sensor.EnelGridSession",
-        return_value=mock_session,
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_USER}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=user_input
-        )
-        assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-
-        await hass.async_block_till_done()
-
-    # Simulate the sensor being created and added to the state machine
-    sensor_entity_id = "sensor.enelgrid_it1234567890_consumption"
-    hass.states.async_set(sensor_entity_id, "123.45")
-
-    await hass.async_block_till_done()
-
-    state = hass.states.get(sensor_entity_id)
-    assert state is not None
-    assert state.state == "123.45"
+    fake_client.login_error = None
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "new"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_PASSWORD] == "new"
+    assert entry.data[CONF_POD] == "IT001E00000001"
 
 
-@pytest.mark.asyncio
-async def test_unload_and_reload_config_entry(hass: HomeAssistant):
-    """Test that the config entry can be unloaded and reloaded properly."""
-    user_input = USER_INPUT.copy()
-
-    mock_session = MagicMock()
-    mock_session.login = AsyncMock()
-    mock_session.close = AsyncMock()
-    mock_session.session = MagicMock()
-
-    with patch(
-        "custom_components.enelgrid.config_flow.EnelGridSession",
-        return_value=mock_session,
-    ), patch(
-        "custom_components.enelgrid.async_setup_entry",
-        return_value=True,
-    ) as mock_setup, patch(
-        "custom_components.enelgrid.async_unload_entry",
-        return_value=True,
-    ) as mock_unload:
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_USER}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input=user_input
-        )
-        assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
-
-        entry = hass.config_entries.async_entries(DOMAIN)[0]
-
-        assert await hass.config_entries.async_unload(entry.entry_id)
-        mock_unload.assert_called_once()
-
-        mock_setup.reset_mock()  # Reset the call count
-
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        mock_setup.assert_called_once()
+async def test_options_flow(hass: HomeAssistant):
+    entry = MockConfigEntry(domain=DOMAIN, version=5, data={CONF_PRICE_PER_KWH: 0.3})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_PRICE_PER_KWH: 0.21})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_PRICE_PER_KWH] == 0.21

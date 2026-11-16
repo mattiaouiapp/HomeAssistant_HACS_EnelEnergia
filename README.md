@@ -5,70 +5,71 @@ This custom integration for Home Assistant retrieves and imports **hourly and da
 ## 📋 Features
 
 - 📊 Automatic login using Enel's SAML authentication process.
-- 🔄 **Supports re-authentication** if the login process encounters issues.
-- 🕒 Fetches and tracks hourly energy consumption (Enel provides data with a three-day delay).
-- 📈 Tracks monthly cumulative consumption.
-- ✅ Seamless integration with Home Assistant Energy Dashboard.
-- 🔁 Automatically updates data daily.
+- 🕒 Imports **hourly** consumption (Enel publishes data with a ~3 day delay) as long-term statistics, ready for the **Energy dashboard**.
+- 📚 Imports the **whole available history** (up to 4 years) on first setup.
+- 💶 Cost statistic based on a configurable price per kWh (changeable from the integration options).
+- 📈 Summary sensors: current month, previous month, last available day, estimated monthly cost, last available data.
+- 🔁 Updates every 12 hours, fills gaps if Home Assistant was offline.
+- 🔐 Re-authentication flow when the Enel password changes.
+- 🩺 Diagnostics download (Settings → Devices & Services → enelgrid → ⋮ → Download diagnostics).
+
+Requires Home Assistant **2025.11** or newer.
 
 ## 🛠️ Installation
 
-### Manual Installation
-
-1. Copy the **`enelgrid`** folder into:
-    ```
-    config/custom_components/enelgrid
-    ```
-2. Restart Home Assistant.
-3. In Home Assistant, go to:  
-   **Settings → Devices & Services → Add Integration**  
-   Search for **"enelgrid"**.
-4. Enter your Enel login credentials and POD details.
-
 ### Installation via HACS (Recommended)
 
-1. In **HACS**, go to **Integrations**.
-2. Add this repository as a **Custom Repository** (if it's not already in HACS).
-3. Search for **"enelgrid"** and install.
-4. Restart Home Assistant.
-5. Follow the setup steps in **Settings → Devices & Services**.
+1. In **HACS**, add this repository as a **Custom Repository** (category *Integration*).
+2. Search for **"enelgrid"** and install.
+3. Restart Home Assistant.
+4. Go to **Settings → Devices & Services → Add Integration** and search for **"enelgrid"**.
+
+### Manual Installation
+
+1. Copy `custom_components/enelgrid` into `config/custom_components/enelgrid`.
+2. Restart Home Assistant and add the integration from **Settings → Devices & Services**.
 
 ## ⚙️ Configuration
 
-During setup, you’ll need to provide:
+During setup you need:
 
-- **Username** Your Enel account email
-- **Password**
-- **POD Number** Found on your Enel bill
-- **User Number** Also found on your Enel bill
-- **Price per Kwh** - Take your total electricity bill amount and divide it by the total kWh consumed (as shown on your bill) to get a reasonable estimate for the price per kWh
+- **Email** and **Password** of the Enel customer area
+- **POD** (e.g. `IT001E12345678`, printed on the bill)
+- **User number** (printed on the bill)
+- **Price per kWh**: total bill amount divided by the kWh consumed is a reasonable estimate. It can be changed later from the integration options (applied from the previous month onwards).
 
-These credentials are stored securely in Home Assistant's `config_entries` storage.
+Then go to **Settings → Dashboards → Energy** and add as grid consumption the statistic
+`Enel <POD> Consumption`, with `Enel <POD> Cost` as entity tracking the total costs:
 
-After this go to your Energy settings and configure the statistics like this:
+![Energy configuration](assets/energy_config.jpg)
 
-![Description of Image](assets/energy_config.jpg)
+Result:
 
-if all goes well, you should see something like this:
+![Example](assets/example.jpg)
 
-![Description of Image](assets/example.jpg)
+## 📊 Entities and statistics
 
-## 🕒 Automatic Data Fetching
+| Name | Type | Notes |
+|---|---|---|
+| `sensor:enelgrid_<pod>_consumption` | external statistic (kWh) | hourly, use it in the Energy dashboard |
+| `sensor:enelgrid_<pod>_kw_cost` | external statistic (EUR) | hourly cost |
+| Current month consumption | sensor (kWh) | entity id kept from v1: `sensor.enelgrid_<pod>_monthly_consumption` |
+| Previous month consumption | sensor (kWh) | |
+| Last available day consumption | sensor (kWh) | attribute `date` |
+| Current month estimated cost | sensor (EUR) | |
+| Last available data | diagnostic timestamp | attribute `historical_import` |
 
-- Data is automatically fetched every day.
-- Data is also fetched immediately upon first installation.
+The sensors only summarise the latest download: the authoritative history is in the statistics.
 
-## 🏷️ Supported Features
+## ⬆️ Upgrading from 1.x
 
-| Feature                            | Status |
-|------------------------------------|--------|
-| Hourly Energy Data                 | ✅ |
-| Daily Energy Data                  | ✅ |
-| Monthly Cumulative Sensor          | ✅ |
-| Energy Dashboard Integration       | ✅ |
-| Automatic Login                    | ✅ |
-| Automatic Daily Fetch              | ✅ |
-| Re-authentication Support          | ✅ |
+The upgrade is automatic. The configuration is migrated (version 5) and **the statistics are rebuilt
+from scratch** with the full Enel history, because v1.6.0 corrupted them on every daily update
+(the first day of the previous month received a huge jump). The statistic ids do not change, so the
+Energy dashboard configuration keeps working.
+
+The old `enelgrid Daily Import` text sensor has been removed (use *Last available data* instead), and
+the `/config/enelgrid_debug` folder is no longer written: it can be deleted.
 
 ## 🔗 Links
 

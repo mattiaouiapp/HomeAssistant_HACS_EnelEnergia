@@ -1,19 +1,101 @@
+"""Shared fixtures for enelgrid tests."""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
 import os
 import sys
-from unittest.mock import MagicMock
+from typing import Any
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-import pytest
-
-
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable custom components for every test."""
+def auto_enable_custom_integrations(recorder_mock, enable_custom_integrations):
+    """Enable custom components (and a real recorder) for every test."""
     yield
 
 
-@pytest.fixture(autouse=True)
-def mock_recorder(hass):
-    hass.data["recorder"] = MagicMock()
+def enel_response(days: dict[date, list[float]]) -> dict[str, Any]:
+    """Build an aggregateConsumption response: {day: [H1, H2, ...]}."""
+    return {
+        "data": {
+            "aggregationResult": {
+                "aggregations": [
+                    {
+                        "referenceID": "hourlyConsumption",
+                        "results": [
+                            {
+                                "date": day.strftime("%d%m%Y"),
+                                "binValues": [
+                                    {"name": f"H{i + 1}", "value": v} for i, v in enumerate(values)
+                                ],
+                            }
+                            for day, values in days.items()
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+
+
+def flat_days(start: date, end: date, kwh_per_hour: float = 0.5) -> dict[date, list[float]]:
+    days = {}
+    cursor = start
+    while cursor <= end:
+        days[cursor] = [kwh_per_hour] * 24
+        cursor += timedelta(days=1)
+    return days
+
+
+class FakeEnelClient:
+    """Stand-in for EnelGridClient.
+
+    Returns 0.5 kWh/hour for every requested day between `first_day` and
+    `last_day` (inclusive), nothing outside. Class attributes allow tests to
+    tweak the behaviour.
+    """
+
+    first_day = date(2025, 6, 1)
+    last_day = date(2025, 11, 13)
+    login_error: Exception | None = None
+    fetch_error: Exception | None = None
+    calls: list[tuple[date, date]] = []
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    async def __aenter__(self):
+        if FakeEnelClient.login_error:
+            raise FakeEnelClient.login_error
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+    async def fetch_consumption(self, start: date, end: date):
+        FakeEnelClient.calls.append((start, end))
+        if FakeEnelClient.fetch_error:
+            raise FakeEnelClient.fetch_error
+        lo = max(start, FakeEnelClient.first_day)
+        hi = min(end, FakeEnelClient.last_day)
+        return enel_response(flat_days(lo, hi) if lo <= hi else {})
+
+
+@pytest.fixture
+def fake_client():
+    FakeEnelClient.first_day = date(2025, 6, 1)
+    FakeEnelClient.last_day = date(2025, 11, 13)
+    FakeEnelClient.login_error = None
+    FakeEnelClient.fetch_error = None
+    FakeEnelClient.calls = []
+    from unittest.mock import patch
+
+    with (
+        patch("custom_components.enelgrid.coordinator.EnelGridClient", FakeEnelClient),
+        patch("custom_components.enelgrid.config_flow.EnelGridClient", FakeEnelClient),
+    ):
+        yield FakeEnelClient
