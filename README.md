@@ -80,6 +80,7 @@ Usa solo card standard di Home Assistant, non servono card aggiuntive.
 3. Se le card delle bollette mostrano "Dati bolletta non ancora disponibili", controlla gli entity id nella pagina
    del dispositivo (vedi [Entità e statistiche](#entità-e-statistiche)): con Home Assistant in italiano sono per
    esempio `sensor.enel_<pod>_ultima_bolletta` invece di `sensor.enel_<pod>_last_bill`.
+   Le statistiche `sensor:enelgrid_<pod>_...` e `sensor.enelgrid_<pod>_monthly_consumption` hanno sempre lo stesso nome.
 
 ## Bollette
 
@@ -114,26 +115,6 @@ content: |-
 ```
 
 Con *Amount due* si possono fare automazioni, per esempio una notifica quando `overdue` diventa `true`.
-
-## Dashboard pronta "Consumi Enel"
-
-Nel file [`dashboard/consumi-enel.yaml`](dashboard/consumi-enel.yaml) c'è una dashboard completa da copiare:
-
-- **Riepilogo**: consumo dell'ultima settimana, del mese, del mese scorso e dell'anno, costo del mese e dell'anno;
-- **Bollette**: ultima bolletta e bolletta precedente, con importo, scadenza, periodo e stato del pagamento;
-- **Andamento**: grafici del consumo orario (1 e 7 giorni), giornaliero (15 e 30 giorni), mensile e del costo
-  mensile stimato (12 mesi).
-
-Come usarla:
-
-1. nel file sostituisci ovunque `it001e12345678` con il tuo POD in minuscolo;
-2. **Impostazioni → Dashboard → Aggiungi dashboard → Nuova dashboard da zero**, aprila, matita →
-   menu ⋮ → **Editor di configurazione grezza**, incolla tutto e salva.
-   Per aggiungere solo la vista a una dashboard esistente, copia l'elemento sotto `views:`.
-
-Gli entity id `sensor.enel_<pod>_...` sono quelli creati con Home Assistant in inglese e il dispositivo col nome
-predefinito *Enel &lt;POD&gt;*. Se la lingua è diversa o hai rinominato il dispositivo, controlla gli id nella
-pagina del dispositivo. Le statistiche `sensor:enelgrid_<pod>_...` hanno sempre lo stesso nome.
 
 ## Entità e statistiche
 
